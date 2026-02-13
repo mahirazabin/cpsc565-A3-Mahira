@@ -35,7 +35,6 @@ Over successive generations, the algorithm preserves the best-performing DNA, co
 ---
 
 ## 2. The World & Visual Guide
-![Ant Simulation Demo](Images/introduction_UI.png)
 
 
 ### The Terrain
@@ -61,7 +60,7 @@ The world is a procedurally generated 3D voxel terrain made up of multiple block
 ---
 
 ## 3. User Interface Explained
-
+![Ant Simulation Demo](Images/introduction_UI.png)
 ### Top-Left HUD (OnGUI overlay)
 
 During simulation, four labels are displayed in yellow text at the top-left of the game view:
@@ -91,7 +90,7 @@ nest blocks: 9
 This counter shows the raw nest block count for the current generation, updated live. It directly reflects how many times the queen successfully placed a nest block and had enough health to do so.
 
 ### End of Simulation Screen
-
+![UI Label](Images/simulation_1)
 When all generations complete, the screen displays:
 
 ```
@@ -260,7 +259,7 @@ This approach was chosen because it creates a direct, observable link between DN
 ## 8. Console Output Guide
 
 The Unity Console window provides a real-time log of everything happening in the simulation. Here is what each message means:
-
+![Ant Simulation Demo](Images/ant_dna.png)
 ### Initialisation
 ```
 === GENERATION 1 INITIALIZED (Seeded) ===
