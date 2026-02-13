@@ -35,6 +35,7 @@ Over successive generations, the algorithm preserves the best-performing DNA, co
 ---
 
 ## 2. The World & Visual Guide
+![Ant Simulation Demo](Images/introduction_UI.png)
 
 
 ### The Terrain
