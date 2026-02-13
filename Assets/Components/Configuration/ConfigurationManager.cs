@@ -4,6 +4,19 @@ using UnityEngine;
 
 public class ConfigurationManager : Singleton<ConfigurationManager>
 {
+    [Header("Evolution Settings")]
+    public int populationSize = 10;
+    public int generationDuration = 60;
+    public float mutationRate = 0.15f;
+    public int eliteCount = 2;
+
+    [Header("Ant Behavior Ranges")]
+    public float minEatChance = 0.0f;
+    public float maxEatChance = 1.0f;
+    public float minDigChance = 0.0f;
+    public float maxDigChance = 1.0f;
+    public float minMoveInterval = 0.1f;
+    public float maxMoveInterval = 1.0f;
 
     /// <summary>
     /// The seed for world generation.

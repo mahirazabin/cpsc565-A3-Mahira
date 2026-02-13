@@ -3,11 +3,19 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using TMPro;
+
 
 namespace Antymology.Terrain
 {
     public class WorldManager : Singleton<WorldManager>
     {
+
+        public int nestBlockCount { get; private set; } = 0;
+
+        public int numberOfWorkers = 10;   // configurable in inspector
+
+        public EvolutionManager evolutionManager;
 
         #region Fields
 
@@ -45,6 +53,21 @@ namespace Antymology.Terrain
 
         #region Initialization
 
+        public bool TryPlaceNest(int x, int y, int z)
+    {
+        // Bounds check via GetBlock
+        var existing = GetBlock(x, y, z);
+
+        // Don't place if it's container or already nest (prevents double counting)
+        if (existing is ContainerBlock) return false;
+        if (existing is NestBlock) return false;
+
+        SetBlock(x, y, z, new NestBlock());
+        nestBlockCount++;
+        return true;
+    }
+
+
         /// <summary>
         /// Awake is called before any start method is called.
         /// </summary>
@@ -68,6 +91,9 @@ namespace Antymology.Terrain
                 ConfigurationManager.Instance.World_Height,
                 ConfigurationManager.Instance.World_Diameter];
         }
+        public GameObject queenPrefab;
+        public TextMeshProUGUI nestCountUIText;
+
 
         /// <summary>
         /// Called after every awake has been called.
@@ -88,8 +114,88 @@ namespace Antymology.Terrain
         /// </summary>
         private void GenerateAnts()
         {
-            throw new NotImplementedException();
+            if (antPrefab == null)
+            {
+                Debug.LogError("Ant Prefab is not assigned in WorldManager Inspector.");
+                return;
+            }
+
+            // Get DNA from evolution manager (if it exists)
+            AntDNA dna = null;
+            if (evolutionManager != null)
+            {
+                dna = evolutionManager.GetCurrentDNA();
+                Debug.Log($"Using evolved DNA: {dna}");
+            }
+
+            int worldX = Blocks.GetLength(0) / 2;
+            int worldZ = Blocks.GetLength(2) / 2;
+
+            // Find surface
+            int surfaceY = 1;
+            for (int y = Blocks.GetLength(1) - 1; y >= 0; y--)
+            {
+                if (Blocks[worldX, y, worldZ] as AirBlock == null)
+                {
+                    surfaceY = y + 1;
+                    break;
+                }
+            }
+
+            // SPAWN THE QUEEN FIRST
+            if (queenPrefab != null)
+            {
+                Vector3 queenPos = new Vector3(worldX, surfaceY, worldZ);
+                GameObject queenObj = Instantiate(queenPrefab, queenPos, Quaternion.identity);
+                
+                // Apply DNA to queen if using evolution
+                if (dna != null)
+                {
+                    QueenAgent queenAgent = queenObj.GetComponent<QueenAgent>();
+                    if (queenAgent != null)
+                    {
+                        queenAgent.dna = dna.Clone(); // Give queen a copy of the DNA
+                    }
+                }
+            }
+            else
+            {
+                Debug.LogError("Queen Prefab is not assigned in WorldManager Inspector.");
+            }
+
+            // SPAWN WORKER ANTS - spread them out randomly
+            for (int i = 0; i < numberOfWorkers; i++)
+            {
+                int randomX = worldX + RNG.Next(-5, 6);
+                int randomZ = worldZ + RNG.Next(-5, 6);
+                
+                // Find surface at this random position
+                int surfaceYAtPos = 1;
+                for (int y = Blocks.GetLength(1) - 1; y >= 0; y--)
+                {
+                    if (Blocks[randomX, y, randomZ] as AirBlock == null)
+                    {
+                        surfaceYAtPos = y + 1;
+                        break;
+                    }
+                }
+                
+                Vector3 spawnPos = new Vector3(randomX, surfaceYAtPos, randomZ);
+                GameObject antObj = Instantiate(antPrefab, spawnPos, Quaternion.identity);
+                
+                // Apply DNA to worker ant if using evolution
+                if (dna != null)
+                {
+                    AntAgent antAgent = antObj.GetComponent<AntAgent>();
+                    if (antAgent != null)
+                    {
+                        antAgent.dna = dna.Clone(); // Give worker a copy of the DNA
+                    }
+                }
+            }
         }
+
+
 
         #endregion
 
@@ -144,6 +250,49 @@ namespace Antymology.Terrain
                 ChunkYCoordinate * LocalYCoordinate,
                 ChunkZCoordinate * LocalZCoordinate
             ];
+        }
+
+        public void RestoreTerrain()
+        {
+            int restored = 0;
+
+            for (int x = 1; x < Blocks.GetLength(0) - 1; x++)
+            {
+                for (int z = 1; z < Blocks.GetLength(2) - 1; z++)
+                {
+                    // Find the lowest air block in each column (bottom of dug hole)
+                    bool inHole = false;
+                    for (int y = 1; y < Blocks.GetLength(1) - 1; y++)
+                    {
+                        var block = Blocks[x, y, z];
+
+                        // If we hit air surrounded by solid blocks = dug hole
+                        if (block is AirBlock)
+                        {
+                            // Check if there's solid block below (meaning this is a dug cavity)
+                            var below = y > 0 ? Blocks[x, y - 1, z] : null;
+                            if (below != null && !(below is AirBlock) && !(below is ContainerBlock))
+                            {
+                                inHole = true;
+                            }
+
+                            if (inHole)
+                            {
+                                // Fill hole back with stone
+                                Blocks[x, y, z] = new StoneBlock();
+                                restored++;
+                                try { SetChunkContainingBlockToUpdate(x, y, z); }
+                                catch { }
+                            }
+                        }
+                        else
+                        {
+                            inHole = false;
+                        }
+                    }
+                }
+            }
+            Debug.Log($"Restored {restored} dug blocks");
         }
 
         /// <summary>
@@ -395,7 +544,7 @@ namespace Antymology.Terrain
 
             if (updateZ - 1 >= 0)
                 Chunks[updateX, updateY, updateZ - 1].updateNeeded = true;
-            if (updateX + 1 < Chunks.GetLength(2))
+            if (updateZ + 1 < Chunks.GetLength(2))
                 Chunks[updateX, updateY, updateZ + 1].updateNeeded = true;
         }
 
@@ -431,9 +580,138 @@ namespace Antymology.Terrain
                         Chunks[x, y, z] = chunkScript;
                     }
         }
+        public void ResetNestCount()
+        {
+            nestBlockCount = 0;
+            Debug.Log("Nest count reset to 0");
+        }
 
+        public void RegenerateMulch()
+        {
+            int mulchAdded = 0;
+            int maxY = Blocks.GetLength(1) - 1;
+
+            for (int x = 1; x < Blocks.GetLength(0) - 1; x++)
+            {
+                for (int z = 1; z < Blocks.GetLength(2) - 1; z++)
+                {
+                    // Find the highest solid block in this column
+                    for (int y = Blocks.GetLength(1) - 2; y >= 1; y--)
+                    {
+                        var block = Blocks[x, y, z];
+
+                        if (!(block is AirBlock) && !(block is ContainerBlock))
+                        {
+                            // Place 2 layers of mulch above every solid surface
+                            if (y + 1 <= maxY && Blocks[x, y + 1, z] is AirBlock)
+                            {
+                                Blocks[x, y + 1, z] = new MulchBlock();
+                                mulchAdded++;
+                                try { SetChunkContainingBlockToUpdate(x, y + 1, z); }
+                                catch { }
+                            }
+                            if (y + 2 <= maxY && Blocks[x, y + 2, z] is AirBlock)
+                            {
+                                Blocks[x, y + 2, z] = new MulchBlock();
+                                mulchAdded++;
+                                try { SetChunkContainingBlockToUpdate(x, y + 2, z); }
+                                catch { }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            Debug.Log($"Regenerated {mulchAdded} mulch blocks for new generation");
+        }
+
+        public void RespawnAnts(AntDNA dna)
+        {
+
+
+
+            // Kill ALL existing ants and queen
+            GameObject[] ants = GameObject.FindGameObjectsWithTag("Ant");
+            foreach (var ant in ants)
+                DestroyImmediate(ant);
+
+            GameObject[] queens = GameObject.FindGameObjectsWithTag("Queen");
+            foreach (var queen in queens)
+                DestroyImmediate(queen);
+
+            Debug.Log($"Found {ants.Length} ants with tag 'Ant'");
+            Debug.Log($"Found {queens.Length} queens with tag 'Queen'");
+
+            Debug.Log($"Killed {ants.Length} ants and {queens.Length} queens");
+
+            int worldX = Blocks.GetLength(0) / 2;
+            int worldZ = Blocks.GetLength(2) / 2;
+
+            // Find surface at center
+            int surfaceY = 1;
+            for (int y = Blocks.GetLength(1) - 1; y >= 0; y--)
+            {
+                if (!(Blocks[worldX, y, worldZ] is AirBlock))
+                {
+                    surfaceY = y + 1;
+                    break;
+                }
+            }
+
+            // Spawn fresh queen with evolved DNA
+            if (queenPrefab != null)
+            {
+                GameObject queenObj = Instantiate(queenPrefab,
+                    new Vector3(worldX, surfaceY, worldZ),
+                    Quaternion.identity);
+
+                QueenAgent queen = queenObj.GetComponent<QueenAgent>();
+                if (queen != null)
+                {
+                    queen.dna = dna.Clone();
+                    Debug.Log($"New queen spawned with DNA: {dna}");
+                }
+            }
+
+            // Spawn fresh workers with evolved DNA
+            for (int i = 0; i < numberOfWorkers; i++)
+            {
+                int rx = worldX + RNG.Next(-5, 6);
+                int rz = worldZ + RNG.Next(-5, 6);
+
+                int sy = 1;
+                for (int y = Blocks.GetLength(1) - 1; y >= 0; y--)
+                {
+                    if (!(Blocks[rx, y, rz] is AirBlock))
+                    {
+                        sy = y + 1;
+                        break;
+                    }
+                }
+
+                GameObject antObj = Instantiate(antPrefab,
+                    new Vector3(rx, sy, rz),
+                    Quaternion.identity);
+
+                AntAgent ant = antObj.GetComponent<AntAgent>();
+                if (ant != null)
+                    ant.dna = dna.Clone();
+            }
+
+            Debug.Log($"Spawned 1 queen + {numberOfWorkers} workers with evolved DNA");
+        }
         #endregion
 
         #endregion
+
+        void Update()
+        {
+            if (nestCountUIText != null)
+            {
+                nestCountUIText.text = $"Nest Blocks: {nestBlockCount}";
+            }
+        }
     }
+
+
 }
