@@ -1,5 +1,6 @@
 # Antymology – Evolutionary Ant Colony Simulation
 ### CPSC 565 – Assignment 3 | Winter 2026
+### Name: Mahira Zabin | UCID: 30150211
 
 ---
 
@@ -34,6 +35,7 @@ Over successive generations, the algorithm preserves the best-performing DNA, co
 ---
 
 ## 2. The World & Visual Guide
+
 
 ### The Terrain
 
